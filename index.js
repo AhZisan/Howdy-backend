@@ -1,11 +1,19 @@
 require("dotenv").config();
-
+const bodyParser = require("body-parser");
+const cors = require("cors");
 const express = require("express");
 const http = require("http");
 const app = express();
 const server = http.createServer(app);
-const socket = require("socket.io");
-const io = socket(server);
+const io = require("socket.io")(server, {
+  cors: {
+    origin: "*",
+  },
+});
+
+app.use(bodyParser.json());
+app.use(cors());
+
 var path = require("path");
 const users = {};
 const socketToRoom = {};
@@ -65,8 +73,7 @@ io.on("connection", (socket) => {
 });
 
 app.get("/", (req, res) => {
-  res.send("I'm live")
-})
-
+  res.send("I'm alive");
+});
 const port = process.env.PORT || 5000;
 server.listen(port, () => console.log(`server is running on port ${port}`));
