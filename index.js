@@ -46,7 +46,6 @@ io.on("connection", (socket) => {
   //generate username against a socket connection and store it
   const user = socket.handshake.query.name;
   const parsedUser = JSON.parse(user);
-  // console.log(parsedUser);
   const username = parsedUser.name;
   if (!users[username]) {
     users[username] = {
@@ -55,7 +54,6 @@ io.on("connection", (socket) => {
       imageUri: parsedUser.imageUri,
     };
   }
-  console.log(users);
   logger.log(SOCKET_EVENT.CONNECTED, username);
   // send back username
   socket.emit(SOCKET_EVENT.CONNECTED, username);
