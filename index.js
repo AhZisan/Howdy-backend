@@ -28,7 +28,11 @@ const users = {};
 const usersList = (usersObj) => {
   const list = [];
   Object.keys(usersObj).forEach((username) => {
-    list.push({ username, timestamp: usersObj[username].timestamp });
+    list.push({
+      username,
+      timestamp: usersObj[username].timestamp,
+      imageUri: usersObj[username].imageUri,
+    });
   });
   return list;
 };
@@ -40,10 +44,18 @@ function Log(message, data) {
 
 io.on("connection", (socket) => {
   //generate username against a socket connection and store it
-  const username = usernameGen.generateUsername("-");
+  const user = socket.handshake.query.name;
+  const parsedUser = JSON.parse(user);
+  // console.log(parsedUser);
+  const username = parsedUser.name;
   if (!users[username]) {
-    users[username] = { id: socket.id, timestamp: new Date().toISOString() };
+    users[username] = {
+      id: socket.id,
+      timestamp: new Date().toISOString(),
+      imageUri: parsedUser.imageUri,
+    };
   }
+  console.log(users);
   logger.log(SOCKET_EVENT.CONNECTED, username);
   // send back username
   socket.emit(SOCKET_EVENT.CONNECTED, username);
