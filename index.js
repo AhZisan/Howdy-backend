@@ -1,79 +1,84 @@
-require("dotenv").config();
-const bodyParser = require("body-parser");
-const cors = require("cors");
+const path = require("path");
+const logger = require("./logger");
+const usernameGen = require("username-generator");
 const express = require("express");
 const app = express();
-const http = require("http");
-const server = http.createServer(app);
-const io = require("socket.io")(server, {
+const http = require("http").createServer(app);
+const io = require("socket.io")(http, {
   cors: {
     origin: "*",
   },
 });
 
-app.use(bodyParser.json());
-app.use(cors());
+const SOCKET_EVENT = {
+  CONNECTED: "connected",
+  DISCONNECTED: "disconnect",
+  USERS_LIST: "users_list",
+  REQUEST_SENT: "request_sent",
+  REQUEST_ACCEPTED: "request_accepted",
+  REQUEST_REJECTED: "request_rejected",
+  SEND_REQUEST: "send_request",
+  ACCEPT_REQUEST: "accept_request",
+  REJECT_REQUEST: "reject_request",
+};
 
-var path = require("path");
 const users = {};
-const socketToRoom = {};
-let dataWithName = [];
+
+// converts users into a list
+const usersList = (usersObj) => {
+  const list = [];
+  Object.keys(usersObj).forEach((username) => {
+    list.push({ username, timestamp: usersObj[username].timestamp });
+  });
+  return list;
+};
+
+// console log with timestamp
+function Log(message, data) {
+  console.log(new Date().toISOString(), message, data);
+}
 
 io.on("connection", (socket) => {
-  var room = socket.handshake["query"]["r_var"];
+  //generate username against a socket connection and store it
+  const username = usernameGen.generateUsername("-");
+  if (!users[username]) {
+    users[username] = { id: socket.id, timestamp: new Date().toISOString() };
+  }
+  logger.log(SOCKET_EVENT.CONNECTED, username);
+  // send back username
+  socket.emit(SOCKET_EVENT.CONNECTED, username);
+  // send online users list
+  io.sockets.emit(SOCKET_EVENT.USERS_LIST, usersList(users));
 
-  socket.on("join room", (roomID) => {
-    socketToRoom[socket.id] = roomID;
-    if (Object.keys(socketToRoom).length > 4) {
-      socket.emit("server full");
-      return;
-    }
-
-    socket.join(room);
-    const socketsArray = Object.keys(io.sockets.adapter.rooms[roomID].sockets);
-    const partnerID = socketsArray.filter((id) => id !== socket.id);
-
-    socket.emit("all users", partnerID);
+  socket.on(SOCKET_EVENT.DISCONNECTED, () => {
+    // remove user from the list
+    delete users[username];
+    // send current users list
+    io.sockets.emit(SOCKET_EVENT.USERS_LIST, usersList(users));
+    Log(SOCKET_EVENT.DISCONNECTED, username);
   });
-  socket.on("username", (payload) => {
-    dataWithName.push(payload);
-  });
 
-  socket.emit("getusername", dataWithName);
-
-  socket.on("sending signal", (payload) => {
-    io.to(payload.userToSignal).emit("user joined", {
-      signal: payload.signal,
-      callerID: payload.callerID,
+  socket.on(SOCKET_EVENT.SEND_REQUEST, ({ username, signal, to }) => {
+    // tell user that a request has been sent
+    io.to(users[to].id).emit(SOCKET_EVENT.REQUEST_SENT, {
+      signal,
+      username,
     });
+    Log(SOCKET_EVENT.SEND_REQUEST, username);
   });
 
-  socket.on("returning signal", (payload) => {
-    io.to(payload.callerID).emit("receiving returned signal", {
-      signal: payload.signal,
-      id: socket.id,
-    });
+  socket.on(SOCKET_EVENT.ACCEPT_REQUEST, ({ signal, to }) => {
+    // tell user the request has been accepted
+    io.to(users[to].id).emit(SOCKET_EVENT.REQUEST_ACCEPTED, { signal });
+    Log(SOCKET_EVENT.ACCEPT_REQUEST, username);
   });
 
-  socket.on("disconnect", () => {
-    const roomID = socketToRoom[socket.id];
-
-    io.in(roomID).emit("user left", roomID);
-    dataWithName = dataWithName.filter((user) => user.id !== socket.id);
-    let room = users[roomID];
-    if (room) {
-      room = room.filter((id) => id !== socket.id);
-    }
-    delete socketToRoom[socket.id];
+  socket.on(SOCKET_EVENT.REJECT_REQUEST, ({ to }) => {
+    // tell user the request has been rejected
+    io.to(users[to].id).emit(SOCKET_EVENT.REQUEST_REJECTED);
+    Log(SOCKET_EVENT.REJECT_REQUEST, username);
   });
-
-  socket.on("file downloaded", () => {
-    socket.broadcast.emit("file recieved");
-  });
-});
-
-app.get("/", (req, res) => {
-  res.send("I'm alive");
 });
 const port = process.env.PORT || 5000;
-server.listen(port, () => console.log(`server is running on port ${port}`));
+http.listen(port);
+Log("server listening on port", port);
