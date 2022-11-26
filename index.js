@@ -20,6 +20,8 @@ const SOCKET_EVENT = {
   SEND_REQUEST: "send_request",
   ACCEPT_REQUEST: "accept_request",
   REJECT_REQUEST: "reject_request",
+  SERVER_FULL: "server_full",
+  LEFT: "left",
 };
 
 const users = {};
@@ -32,6 +34,7 @@ const usersList = (usersObj) => {
       username,
       timestamp: usersObj[username].timestamp,
       imageUri: usersObj[username].imageUri,
+      roomId: usersObj[username]?.roomId,
     });
   });
   return list;
@@ -47,18 +50,33 @@ io.on("connection", (socket) => {
   const user = socket.handshake.query.name;
   const parsedUser = JSON.parse(user);
   const username = parsedUser.name;
+
+  if (Object.keys(users).length > 10) {
+    socket.emit(SOCKET_EVENT.SERVER_FULL);
+    return;
+  }
   if (!users[username]) {
     users[username] = {
       id: socket.id,
       timestamp: new Date().toISOString(),
       imageUri: parsedUser.imageUri,
+      roomId: parsedUser?.roomId,
     };
   }
+  console.log(users);
   logger.log(SOCKET_EVENT.CONNECTED, username);
   // send back username
   socket.emit(SOCKET_EVENT.CONNECTED, username);
+
   // send online users list
   io.sockets.emit(SOCKET_EVENT.USERS_LIST, usersList(users));
+
+  socket.on(SOCKET_EVENT.LEFT, () => {
+    delete users[username];
+    // send current users list
+    io.sockets.emit(SOCKET_EVENT.USERS_LIST, usersList(users));
+    Log(SOCKET_EVENT.DISCONNECTED, username);
+  });
 
   socket.on(SOCKET_EVENT.DISCONNECTED, () => {
     // remove user from the list
